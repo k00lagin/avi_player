@@ -16,19 +16,20 @@
     font: 14px/1.4 -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
   body { display: flex; flex-direction: column; min-height: 100vh; }
   header { display: flex; align-items: center; gap: 14px; padding: 12px 18px;
-    background: var(--panel); border-bottom: 1px solid var(--line); }
+    background: var(--panel); border-bottom: 1px solid var(--line); min-width: 0; }
   header .logo { width: 30px; height: 30px; border-radius: 7px;
     background: linear-gradient(135deg, var(--acc), #b9842d);
     display: grid; place-items: center; color: #1a1306; font-weight: 800;
     box-shadow: 0 1px 0 rgba(255,255,255,.15) inset; }
+  header .titleblock { min-width: 0; }
   header h1 { font-size: 15px; margin: 0; letter-spacing: .3px; }
-  header .sub { color: var(--mut); font-size: 12px; }
+  header .sub { color: var(--mut); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   header .spacer { flex: 1; }
   header .ver { color: var(--mut); font-size: 11px; }
-  main { flex: 1; display: grid; grid-template-columns: 1fr 320px; min-height: 0; }
-  @media (max-width: 900px) { main { grid-template-columns: 1fr; } }
+  main { flex: 1; display: grid; grid-template-columns: 1fr; min-height: 0; }
   .stage { position: relative; background: #000; display: flex; align-items: center;
     justify-content: center; min-height: 0; overflow: hidden; }
+  .stage.drag { outline: 1px solid var(--acc); outline-offset: -1px; }
   .stage:fullscreen, .stage:-webkit-full-screen { width: 100vw; height: 100vh; }
   #video { max-width: 100%; max-height: 100%; width: auto; height: auto;
     image-rendering: pixelated; background: #000; display: block; }
@@ -50,13 +51,18 @@
   .btn.primary { background: linear-gradient(180deg, var(--acc), #c8902a);
     color: #1a1306; border-color: transparent; font-weight: 700; }
   .btn.primary:hover { filter: brightness(1.06); color: #1a1306; }
-  aside { background: var(--panel); border-left: 1px solid var(--line); padding: 16px;
-    display: flex; flex-direction: column; gap: 14px; min-height: 0; overflow: auto; }
-  aside h2 { font-size: 11px; text-transform: uppercase; letter-spacing: .08em;
+  .info-toggle { position: absolute; top: 14px; right: 14px; z-index: 5; font-size: 16px; font-weight: 700; }
+  .info-popover { position: absolute; top: 56px; right: 14px; z-index: 6;
+    width: min(320px, calc(100% - 28px)); max-height: calc(100% - 70px);
+    overflow: auto; background: var(--panel); border: 1px solid var(--line);
+    border-radius: 10px; padding: 14px; display: flex; flex-direction: column; gap: 14px; }
+  .info-popover[hidden] { display: none; }
+  .info-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+  .info-head h2, .info-section h2 { font-size: 11px; text-transform: uppercase; letter-spacing: .08em;
     color: var(--mut); margin: 4px 0 6px; }
-  .filebox { border: 1px dashed var(--line); border-radius: 10px; padding: 14px;
+  .info-head h2 { margin: 0; }
+  .filebox { border: 1px solid var(--line); border-radius: 10px; padding: 14px;
     display: flex; flex-direction: column; gap: 10px; background: var(--panel2); }
-  .filebox.drag { border-color: var(--acc); background: #221a0e; }
   .meta { font-size: 12px; color: var(--mut); }
   .meta b { color: var(--ink); font-weight: 600; }
   .meta .row { display: flex; justify-content: space-between; gap: 8px; padding: 3px 0;
@@ -95,11 +101,13 @@
 <body>
 <header>
   <div class="logo">D</div>
-  <div>
+  <div class="titleblock">
     <h1>DivX AVI Player</h1>
     <div class="sub">Browser playback for archival DivX&nbsp;5 / MPEG-4 Part&nbsp;2 + MP3 AVI files</div>
   </div>
   <div class="spacer"></div>
+  <input type="file" id="fileInput" accept=".avi,video/x-msvideo,video/avi,video/*" hidden>
+  <button class="btn primary" id="openBtn">Open .avi file...</button>
   <div class="ver" id="ver">-</div>
 </header>
 
@@ -115,30 +123,35 @@
         </div>
       </div>
     </div>
-  </div>
 
-  <aside>
-    <div>
-      <h2>Source</h2>
-      <div class="filebox" id="filebox">
-        <input type="file" id="fileInput" accept=".avi,video/x-msvideo,video/avi,video/*" hidden>
-        <button class="btn primary" id="openBtn">Open .avi file...</button>
-        <div class="meta" id="fileMeta" style="text-align:center;">No file loaded</div>
+    <button class="icobtn info-toggle" id="infoBtn" title="Info" aria-label="Info" aria-expanded="false" aria-controls="infoPanel">i</button>
+    <div class="info-popover" id="infoPanel" hidden>
+      <div class="info-head">
+        <h2>Info</h2>
+        <button class="icobtn" id="infoCloseBtn" title="Close info" aria-label="Close info">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+        </button>
+      </div>
+      <div class="info-section">
+        <h2>Source</h2>
+        <div class="filebox">
+          <div class="meta" id="fileMeta" style="text-align:center;">No file loaded</div>
+        </div>
+      </div>
+      <div class="info-section">
+        <h2>Stream info</h2>
+        <div class="meta" id="streamInfo">-</div>
+      </div>
+      <div class="info-section">
+        <h2>Status</h2>
+        <div class="statusline" id="status">Idle</div>
+      </div>
+      <div class="kbd">
+        <kbd>Space</kbd> play/pause &nbsp; <kbd>&larr;</kbd>/<kbd>&rarr;</kbd> seek 5s<br>
+        <kbd>&uarr;</kbd>/<kbd>&darr;</kbd> volume
       </div>
     </div>
-    <div>
-      <h2>Stream info</h2>
-      <div class="meta" id="streamInfo">-</div>
-    </div>
-    <div>
-      <h2>Status</h2>
-      <div class="statusline" id="status">Idle</div>
-    </div>
-    <div class="kbd">
-      <kbd>Space</kbd> play/pause &nbsp; <kbd>&larr;</kbd>/<kbd>&rarr;</kbd> seek 5s<br>
-      <kbd>&uarr;</kbd>/<kbd>&darr;</kbd> volume
-    </div>
-  </aside>
+  </div>
 </main>
 
 <footer>
@@ -169,7 +182,8 @@ const dom = {
   stage: document.querySelector(".stage"),
   canvas: $("video"), overlay: $("overlay"),
   ovTitle: $("ovTitle"), ovHint: $("ovHint"), ovActions: $("ovActions"),
-  openBtn: $("openBtn"), fileInput: $("fileInput"), filebox: $("filebox"),
+  openBtn: $("openBtn"), fileInput: $("fileInput"),
+  infoBtn: $("infoBtn"), infoPanel: $("infoPanel"), infoCloseBtn: $("infoCloseBtn"),
   fileMeta: $("fileMeta"), streamInfo: $("streamInfo"), status: $("status"), ver: $("ver"),
   playBtn: $("playBtn"), playIcon: $("playIcon"),
   fullscreenBtn: $("fullscreenBtn"), fullscreenIcon: $("fullscreenIcon"),
@@ -205,6 +219,11 @@ function showOverlay(title, hint, actionsHtml = "", hintCls = "") {
 
 function hideOverlay() {
   dom.overlay.style.display = "none";
+}
+
+function setInfoOpen(open) {
+  dom.infoPanel.hidden = !open;
+  dom.infoBtn.setAttribute("aria-expanded", open ? "true" : "false");
 }
 
 function fmtTime(seconds) {
@@ -320,7 +339,7 @@ showOverlay("Loading DivX decoder", "Downloading / compiling the WebAssembly cor
 player.init()
   .then(() => {
     dom.ver.textContent = "libav.js / divx-mp3-avi";
-    showOverlay("Ready", "Click below to choose an AVI file, or drag and drop one onto the sidebar.",
+    showOverlay("Ready", "Click below to choose an AVI file, or drag and drop one onto the video area.",
       `<button class="btn primary" data-open-file>Open .avi file...</button>`);
   })
   .catch((error) => {
@@ -340,11 +359,17 @@ dom.ovActions.addEventListener("click", (event) => {
 });
 dom.openBtn.addEventListener("click", () => dom.fileInput.click());
 dom.fileInput.addEventListener("change", () => { if (dom.fileInput.files[0]) openFile(dom.fileInput.files[0]); });
-dom.filebox.addEventListener("dragover", (event) => { event.preventDefault(); dom.filebox.classList.add("drag"); });
-dom.filebox.addEventListener("dragleave", () => dom.filebox.classList.remove("drag"));
-dom.filebox.addEventListener("drop", (event) => {
+dom.infoBtn.addEventListener("click", () => setInfoOpen(dom.infoPanel.hidden));
+dom.infoCloseBtn.addEventListener("click", () => setInfoOpen(false));
+dom.stage.addEventListener("click", (event) => {
+  if (dom.infoPanel.hidden || dom.infoPanel.contains(event.target) || dom.infoBtn.contains(event.target)) return;
+  setInfoOpen(false);
+});
+dom.stage.addEventListener("dragover", (event) => { event.preventDefault(); dom.stage.classList.add("drag"); });
+dom.stage.addEventListener("dragleave", () => dom.stage.classList.remove("drag"));
+dom.stage.addEventListener("drop", (event) => {
   event.preventDefault();
-  dom.filebox.classList.remove("drag");
+  dom.stage.classList.remove("drag");
   const file = event.dataTransfer.files[0];
   if (file) openFile(file);
 });
@@ -367,7 +392,10 @@ dom.seek.addEventListener("change", () => {
 document.addEventListener("keydown", (event) => {
   if (event.target.tagName === "INPUT" && event.code !== "KeyF") return;
   const state = player.getState();
-  if (event.code === "Space") {
+  if (event.code === "Escape" && !dom.infoPanel.hidden) {
+    event.preventDefault();
+    setInfoOpen(false);
+  } else if (event.code === "Space") {
     event.preventDefault();
     togglePlay();
   } else if (event.code === "ArrowRight") {
