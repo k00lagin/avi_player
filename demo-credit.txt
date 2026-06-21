@@ -1,0 +1,16 @@
+Demo video: demo_bigbuckbunny.avi
+==================================
+
+This is a short (~60 s) clip encoded to match the test videos' format:
+  - Container: AVI
+  - Video: MPEG-4 Part 2 (FourCC DX50 / DivX 5 ASP), 640x480, 4:3, 29.97 fps, yuv420p
+  - Audio: MP3 (0x0055), 44100 Hz, stereo, 192 kbps
+
+Source / attribution (REQUIRED by the license):
+  Big Buck Bunny
+  (c) copyright 2008, Blender Foundation / www.bigbuckbunny.org
+  Licensed under the Creative Commons Attribution 3.0 Unported License (CC BY 3.0).
+  https://peach.blender.org/about/
+
+Open it in the player via the "Open .avi file" button (or drag & drop),
+just like the other AVIs.

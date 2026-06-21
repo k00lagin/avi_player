@@ -78,6 +78,7 @@ async function testFile(name) {
 (async () => {
   const a = await testFile("1.avi");
   const b = await testFile("1 (3).avi");
-  console.log(a && b ? "ALL_OK" : "SOME_FAIL");
-  process.exit(a && b ? 0 : 1);
+  const c = await testFile("demo_bigbuckbunny.avi");
+  console.log(a && b && c ? "ALL_OK" : "SOME_FAIL");
+  process.exit(a && b && c ? 0 : 1);
 })().catch(e => { console.error("ERR", e); process.exit(2); });

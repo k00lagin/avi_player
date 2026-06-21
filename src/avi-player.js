@@ -315,7 +315,7 @@ export class AviPlayer {
       if (queueAudio && this.aBaseTime - now > 2.5) { await sleep(20); continue; }
 
       if (this.eof) {
-        if (this.vQueue.length === 0 && (!this.state.hasAudio || (this.audioFeeds.length === 0 && this._audioDone()))) {
+        if (this._playbackDrained(now, frameDur)) {
           if (!this.state.ended) this._onEnd();
         }
         await sleep(60);
@@ -449,6 +449,20 @@ export class AviPlayer {
   _audioDone() {
     if (!this.audioCtx) return true;
     return this.audioCtx.currentTime - this.wallStart >= (this.aBaseTime - this.mediaStart) - 0.01;
+  }
+
+  _playbackDrained(now, frameDur) {
+    const decodedEnd = Math.max(this.vBaseTime, this.state.hasAudio && !this.audioDisabled ? this.aBaseTime : 0);
+    const endAt = this.state.duration > 0
+      ? Math.min(this.state.duration, decodedEnd || this.state.duration)
+      : decodedEnd;
+    const videoDone = this.vQueue.length === 0 ||
+      (endAt > 0 && now >= endAt - 0.02) ||
+      (this.vQueue.length === 1 && now >= this.vQueue[0].t + frameDur);
+    const audioDone = !this.state.hasAudio ||
+      this.audioDisabled ||
+      (this.audioFeeds.length === 0 && this._audioDone());
+    return videoDone && audioDone;
   }
 
   _startRaf() {
@@ -704,7 +718,8 @@ export class AviPlayer {
   }
 
   _onEnd() {
-    this.state.currentTime = this._currentMediaTime();
+    const now = this._currentMediaTime();
+    this.state.currentTime = this.state.duration > 0 ? Math.min(this.state.duration, now) : now;
     this.state.playing = false;
     this.state.ended = true;
     this._stopActiveSources();

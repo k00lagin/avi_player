@@ -29,6 +29,7 @@
   @media (max-width: 900px) { main { grid-template-columns: 1fr; } }
   .stage { position: relative; background: #000; display: flex; align-items: center;
     justify-content: center; min-height: 0; overflow: hidden; }
+  .stage:fullscreen, .stage:-webkit-full-screen { width: 100vw; height: 100vh; }
   #video { max-width: 100%; max-height: 100%; width: auto; height: auto;
     image-rendering: pixelated; background: #000; display: block; }
   .stage .vframe { position: relative; display: flex; align-items: center;
@@ -143,6 +144,9 @@
     <button class="icobtn" id="playBtn" disabled title="Play / Pause (Space)">
       <svg viewBox="0 0 24 24" fill="currentColor"><path id="playIcon" d="M8 5v14l11-7z"/></svg>
     </button>
+    <button class="icobtn" id="fullscreenBtn" title="Fullscreen (F)" aria-label="Fullscreen">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path id="fullscreenIcon" d="M8 3H5a2 2 0 0 0-2 2v3M16 3h3a2 2 0 0 1 2 2v3M8 21H5a2 2 0 0 1-2-2v-3M16 21h3a2 2 0 0 0 2-2v-3"/></svg>
+    </button>
   </div>
   <div class="time" id="curTime">0:00</div>
   <input type="range" class="scrub" id="seek" min="0" max="1000" value="0" disabled>
@@ -160,11 +164,13 @@ const LIBAV_JS = "lib/libav-6.8.8.0-divx-mp3-avi.js";
 
 const $ = (id) => document.getElementById(id);
 const dom = {
+  stage: document.querySelector(".stage"),
   canvas: $("video"), overlay: $("overlay"),
   ovTitle: $("ovTitle"), ovHint: $("ovHint"), ovActions: $("ovActions"),
   openBtn: $("openBtn"), fileInput: $("fileInput"), filebox: $("filebox"),
   fileMeta: $("fileMeta"), streamInfo: $("streamInfo"), status: $("status"), ver: $("ver"),
   playBtn: $("playBtn"), playIcon: $("playIcon"),
+  fullscreenBtn: $("fullscreenBtn"), fullscreenIcon: $("fullscreenIcon"),
   seek: $("seek"), curTime: $("curTime"), durTime: $("durTime"), vol: $("vol"),
 };
 
@@ -247,6 +253,34 @@ function setPlayIcon(isPlaying) {
   dom.playIcon.setAttribute("d", isPlaying ? "M6 5h4v14H6zM14 5h4v14h-4z" : "M8 5v14l11-7z");
 }
 
+function isStageFullscreen() {
+  return document.fullscreenElement === dom.stage || document.webkitFullscreenElement === dom.stage;
+}
+
+function updateFullscreenIcon() {
+  const active = isStageFullscreen();
+  dom.fullscreenIcon.setAttribute("d", active
+    ? "M8 3v3a2 2 0 0 1-2 2H3M16 3v3a2 2 0 0 0 2 2h3M8 21v-3a2 2 0 0 0-2-2H3M16 21v-3a2 2 0 0 1 2-2h3"
+    : "M8 3H5a2 2 0 0 0-2 2v3M16 3h3a2 2 0 0 1 2 2v3M8 21H5a2 2 0 0 1-2-2v-3M16 21h3a2 2 0 0 0 2-2v-3");
+  dom.fullscreenBtn.title = active ? "Exit fullscreen (F)" : "Fullscreen (F)";
+  dom.fullscreenBtn.setAttribute("aria-label", active ? "Exit fullscreen" : "Fullscreen");
+}
+
+async function toggleFullscreen() {
+  try {
+    if (isStageFullscreen()) {
+      if (document.exitFullscreen) await document.exitFullscreen();
+      else if (document.webkitExitFullscreen) await document.webkitExitFullscreen();
+    } else if (dom.stage.requestFullscreen) {
+      await dom.stage.requestFullscreen();
+    } else if (dom.stage.webkitRequestFullscreen) {
+      await dom.stage.webkitRequestFullscreen();
+    }
+  } catch (error) {
+    setStatus("Fullscreen failed: " + (error.message || error), "err");
+  }
+}
+
 async function openFile(file) {
   dom.fileMeta.innerHTML = `<b>${escapeHtml(file.name)}</b><br>${(file.size / 1048576).toFixed(1)} MB`;
   showOverlay("Opening", `Reading <b>${escapeHtml(file.name)}</b> into the decoder...`);
@@ -313,6 +347,9 @@ dom.filebox.addEventListener("drop", (event) => {
   if (file) openFile(file);
 });
 dom.playBtn.addEventListener("click", togglePlay);
+dom.fullscreenBtn.addEventListener("click", toggleFullscreen);
+document.addEventListener("fullscreenchange", updateFullscreenIcon);
+document.addEventListener("webkitfullscreenchange", updateFullscreenIcon);
 dom.vol.addEventListener("input", () => player.setVolume(parseFloat(dom.vol.value)));
 dom.seek.addEventListener("pointerdown", () => { dragging = true; });
 dom.seek.addEventListener("pointerup", () => { dragging = false; });
@@ -326,7 +363,7 @@ dom.seek.addEventListener("change", () => {
   if (state.duration) player.seek((dom.seek.value / 1000) * state.duration);
 });
 document.addEventListener("keydown", (event) => {
-  if (event.target.tagName === "INPUT") return;
+  if (event.target.tagName === "INPUT" && event.code !== "KeyF") return;
   const state = player.getState();
   if (event.code === "Space") {
     event.preventDefault();
@@ -341,8 +378,16 @@ document.addEventListener("keydown", (event) => {
   } else if (event.code === "ArrowDown") {
     dom.vol.value = Math.max(0, parseFloat(dom.vol.value) - 0.05);
     dom.vol.dispatchEvent(new Event("input"));
+  } else if (event.code === "KeyF" && !event.ctrlKey && !event.metaKey && !event.altKey) {
+    event.preventDefault();
+    toggleFullscreen();
   }
 });
+
+if (!document.fullscreenEnabled && !document.webkitFullscreenEnabled) {
+  dom.fullscreenBtn.disabled = true;
+}
+updateFullscreenIcon();
 </script>
 </body>
 </html>
