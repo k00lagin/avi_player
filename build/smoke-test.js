@@ -1,5 +1,5 @@
 // Smoke test: load the custom libav.js variant in node, demux 1.avi,
-// decode a few DivX frames + an MP3 frame. Confirms the build decodes our files.
+// decode a few DivX frames + MP3 frames. Confirms the build decodes our files.
 const path = require("path");
 const fs = require("fs");
 
@@ -7,7 +7,17 @@ const LIB = path.resolve(__dirname, "..", "lib", "libav-6.8.8.0-divx-mp3-avi.js"
 process.chdir(path.dirname(LIB));
 require(LIB);
 
-const AVI = path.resolve(__dirname, "..", "1.avi");
+const AVI = samplePath("1.avi");
+
+function samplePath(name) {
+  const direct = path.resolve(__dirname, "..", name);
+  if (fs.existsSync(direct)) return direct;
+  return path.resolve(__dirname, "..", "test files", name);
+}
+
+function timeBase(stream) {
+  return [stream.time_base_num || 1, stream.time_base_den || 1];
+}
 
 (async () => {
   const t0 = Date.now();
@@ -23,22 +33,25 @@ const AVI = path.resolve(__dirname, "..", "1.avi");
   console.log("streams:", streams.length);
   let v = null, a = null;
   for (const s of streams) {
-    const t = s.codecpar ? s.codecpar.codec_type : s.codec_type;
-    console.log("  stream", s.index, "type", t, "codec_id", s.codecpar ? s.codecpar.codec_id : s.codec_id);
-    if (t === 0 && !v) v = s;
-    else if (t === 1 && !a) a = s;
+    console.log("  stream", s.index, "type", s.codec_type, "codec_id", s.codec_id);
+    if (s.codec_type === 0 && !v) v = s;
+    else if (s.codec_type === 1 && !a) a = s;
   }
   if (!v) throw new Error("no video stream");
 
+  const vcp = await libav.AVStream_codecpar(v.ptr);
   const [, vctx, vpkt, vframe] = await libav.ff_init_decoder(
-    v.codecpar.codec_id, { codecpar: v.codecpar, time_base: v.time_base });
-  console.log("video decoder ready; tb=", v.time_base);
+    v.codec_id, { codecpar: vcp, time_base: timeBase(v) });
+  console.log("video decoder ready; tb=", timeBase(v));
 
-  let [, actx, apkt, aframe] = [null, null, null, null];
+  let actx = null, apkt = null, aframe = null;
   if (a) {
+    const acp = await libav.AVStream_codecpar(a.ptr);
     [, actx, apkt, aframe] = await libav.ff_init_decoder(
-      a.codecpar.codec_id, { codecpar: a.codecpar, time_base: a.time_base });
-    console.log("audio decoder ready; tb=", a.time_base, "rate=", a.codecpar.sample_rate, "ch=", a.codecpar.channels);
+      a.codec_id, { codecpar: acp, time_base: timeBase(a) });
+    const rate = await libav.AVCodecContext_sample_rate(actx);
+    const ch = await libav.AVCodecContext_channels(actx);
+    console.log("audio decoder ready; tb=", timeBase(a), "rate=", rate, "ch=", ch);
   }
 
   const rpkt = await libav.av_packet_alloc();
@@ -51,7 +64,7 @@ const AVI = path.resolve(__dirname, "..", "1.avi");
       for (const f of frs) {
         vDecoded++;
         if (!firstVideoFrame) firstVideoFrame = f;
-        console.log(`  video frame ${vDecoded}: ${f.width}x${f.height} fmt=${f.format} pts=${f.pts} layout=${JSON.stringify(f.layout)}`);
+        if (vDecoded <= 5) console.log(`  video frame ${vDecoded}: ${f.width}x${f.height} fmt=${f.format} pts=${f.pts}`);
       }
     }
     if (a && packs[a.index] && packs[a.index].length) {
@@ -66,7 +79,7 @@ const AVI = path.resolve(__dirname, "..", "1.avi");
   }
 
   console.log(`\nRESULT: decoded ${vDecoded} video frames, ${aDecoded} audio frames in ${Date.now() - t0}ms`);
-  if (firstVideoFrame) {
+  if (firstVideoFrame && firstVideoFrame.width && firstVideoFrame.height) {
     console.log("first video frame dimensions:", firstVideoFrame.width, "x", firstVideoFrame.height, "format", firstVideoFrame.format);
     console.log("SMOKE_TEST_OK");
   } else {

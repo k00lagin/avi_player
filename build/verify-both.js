@@ -4,6 +4,13 @@ const LIB = path.resolve(__dirname, "..", "lib", "libav-6.8.8.0-divx-mp3-avi.js"
 process.chdir(path.dirname(LIB));
 require(LIB);
 
+function samplePath(name) {
+  const direct = path.resolve(__dirname, "..", name);
+  if (fs.existsSync(direct)) return direct;
+  const mapped = name === "1 (3).avi" ? "2.avi" : name;
+  return path.resolve(__dirname, "..", "test files", mapped);
+}
+
 function mp3FrameLength(buf, i) {
   if (i + 4 > buf.length) return -1;
   const b1 = buf[i + 1];
@@ -28,7 +35,7 @@ function mp3FrameLength(buf, i) {
 
 async function testFile(name) {
   const libav = await LibAV.LibAV({ noworker: true });
-  await libav.writeFile("in.avi", new Uint8Array(fs.readFileSync(path.resolve(__dirname, "..", name))));
+  await libav.writeFile("in.avi", new Uint8Array(fs.readFileSync(samplePath(name))));
   const [fmt, streams] = await libav.ff_init_demuxer_file("in.avi");
   const a = streams.find(s => s.codec_type === 1);
   const acp = await libav.AVStream_codecpar(a.ptr);

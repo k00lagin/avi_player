@@ -1,7 +1,14 @@
 // Validate JS MP3 reframing + decode against 1 (3).avi (the failing file).
 const fs = require("fs"), path = require("path");
 require(path.resolve(__dirname, "..", "lib", "libav-6.8.8.0-divx-mp3-avi.js"));
-const AVI = path.resolve(__dirname, "..", "1 (3).avi");
+const AVI = samplePath("1 (3).avi");
+
+function samplePath(name) {
+  const direct = path.resolve(__dirname, "..", name);
+  if (fs.existsSync(direct)) return direct;
+  const mapped = name === "1 (3).avi" ? "2.avi" : name;
+  return path.resolve(__dirname, "..", "test files", mapped);
+}
 
 function mp3FrameLength(buf, i) {
   if (i + 4 > buf.length) return -1;

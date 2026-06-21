@@ -1,11 +1,20 @@
 // Validates the player's pure conversion logic against real decoded data.
+// The sample files may start with black/silent frames, so this scans a short
+// prefix and passes once it finds meaningful video and audio output.
 const path = require("path"), fs = require("fs");
 const LIB = path.resolve(__dirname, "..", "lib", "libav-6.8.8.0-divx-mp3-avi.js");
 process.chdir(path.dirname(LIB));
 require(LIB);
-const AVI = path.resolve(__dirname, "..", "1.avi");
+const AVI = samplePath("1.avi");
 
 const AV_SAMPLE_FMT_S16P = 6, AV_SAMPLE_FMT_FLTP = 8;
+
+function samplePath(name) {
+  const direct = path.resolve(__dirname, "..", name);
+  if (fs.existsSync(direct)) return direct;
+  return path.resolve(__dirname, "..", "test files", name);
+}
+
 function convPlane(plane, fmt, count, offset, stride) {
   const fl = new Float32Array(count);
   if (fmt === AV_SAMPLE_FMT_FLTP) {
@@ -17,6 +26,7 @@ function convPlane(plane, fmt, count, offset, stride) {
   }
   return fl;
 }
+
 function audioFrameToFloat(f) {
   const fmt = f.format, nb = f.nb_samples, ch = f.channels || 1;
   const planes = f.data; const out = [];
@@ -26,33 +36,8 @@ function audioFrameToFloat(f) {
   return out;
 }
 
-(async () => {
-  const libav = await LibAV.LibAV({ noworker: true });
-  await libav.writeFile("in.avi", new Uint8Array(fs.readFileSync(AVI)));
-  const [fmt, streams] = await libav.ff_init_demuxer_file("in.avi");
-  const v = streams.find(s => s.codec_type === 0), a = streams.find(s => s.codec_type === 1);
-  const vcp = await libav.AVStream_codecpar(v.ptr);
-  const [, vctx, vpkt, vframe] = await libav.ff_init_decoder(v.codec_id, { codecpar: vcp, time_base: [v.time_base_num, v.time_base_den] });
-  const acp = await libav.AVStream_codecpar(a.ptr);
-  const [, actx, apkt, aframe] = await libav.ff_init_decoder(a.codec_id, { codecpar: acp, time_base: [a.time_base_num, a.time_base_den] });
-  const rpkt = await libav.av_packet_alloc();
-
-  let vf = null, af = null;
-  while (!vf || !af) {
-    const [res, packs] = await libav.ff_read_frame_multi(fmt, rpkt, { limit: 1 << 19 });
-    if (!vf && packs[v.index] && packs[v.index].length) {
-      const frs = await libav.ff_decode_multi(vctx, vpkt, vframe, packs[v.index], { copyoutFrame: "video" });
-      if (frs.length) vf = frs[0];
-    }
-    if (!af && packs[a.index] && packs[a.index].length) {
-      const frs = await libav.ff_decode_multi(actx, apkt, aframe, packs[a.index]);
-      if (frs.length) af = frs[0];
-    }
-    if (res === libav.AVERROR_EOF) break;
-  }
-
-  // --- video YUV420P -> RGBA (BT.601) and sanity-check ---
-  const w = vf.width, h = vf.height, lay = vf.layout, data = vf.data;
+function videoStats(f) {
+  const w = f.width, h = f.height, lay = f.layout, data = f.data;
   const yO = lay[0].offset, yS = lay[0].stride;
   const uO = lay[1].offset, uS = lay[1].stride;
   const vO = lay[2].offset, vS = lay[2].stride;
@@ -73,20 +58,66 @@ function audioFrameToFloat(f) {
       if (r < rmin) rmin = r; if (r > rmax) rmax = r;
     }
   }
-  console.log(`VIDEO: ${w}x${h}  RGBA bytes=${rgba.length}  nonblack=${((nonblack / (w * h)) * 100).toFixed(1)}%  Rrange=[${rmin},${rmax}]`);
-  fs.writeFileSync(path.resolve(__dirname, "frame0.rgba"), rgba);
-  console.log("  wrote build/frame0.rgba (raw RGBA, viewable e.g. in ffmpeg/ImageMagick)");
+  return { w, h, rgba, nonblack, rmin, rmax };
+}
 
-  // --- audio S16P -> float sanity-check ---
-  const ch = audioFrameToFloat(af);
+function audioStats(f) {
+  const ch = audioFrameToFloat(f);
   let amin = 1, amax = -1, azero = 0;
   for (const plane of ch) for (let i = 0; i < plane.length; i++) {
     const s = plane[i]; if (s < amin) amin = s; if (s > amax) amax = s; if (s === 0) azero++;
   }
-  const total = ch[0].length * ch.length;
-  console.log(`AUDIO: fmt=${af.format} planes=${ch.length} nb=${af.nb_samples}  floatRange=[${amin.toFixed(3)},${amax.toFixed(3)}]  zeros=${((azero/total)*100).toFixed(1)}%`);
+  return { ch, amin, amax, azero, total: ch[0].length * ch.length, nb: f.nb_samples, fmt: f.format };
+}
 
-  const ok = w === 640 && h === 480 && nonblack > w * h * 0.05 && amax > 0.01 && ch.length === 2;
+(async () => {
+  const libav = await LibAV.LibAV({ noworker: true });
+  await libav.writeFile("in.avi", new Uint8Array(fs.readFileSync(AVI)));
+  const [fmt, streams] = await libav.ff_init_demuxer_file("in.avi");
+  const v = streams.find(s => s.codec_type === 0), a = streams.find(s => s.codec_type === 1);
+  const vcp = await libav.AVStream_codecpar(v.ptr);
+  const [, vctx, vpkt, vframe] = await libav.ff_init_decoder(v.codec_id, { codecpar: vcp, time_base: [v.time_base_num, v.time_base_den] });
+  const acp = await libav.AVStream_codecpar(a.ptr);
+  const [, actx, apkt, aframe] = await libav.ff_init_decoder(a.codec_id, { codecpar: acp, time_base: [a.time_base_num, a.time_base_den] });
+  const rpkt = await libav.av_packet_alloc();
+
+  let goodVideo = null, goodAudio = null, decodedVideo = 0, decodedAudio = 0;
+  for (let loop = 0; loop < 200 && (!goodVideo || !goodAudio); loop++) {
+    const [res, packs] = await libav.ff_read_frame_multi(fmt, rpkt, { limit: 1 << 19 });
+    if (!goodVideo && packs[v.index] && packs[v.index].length) {
+      const frs = await libav.ff_decode_multi(vctx, vpkt, vframe, packs[v.index], { copyoutFrame: "video" });
+      for (const f of frs) {
+        decodedVideo++;
+        const stats = videoStats(f);
+        if (!goodVideo && stats.w === 640 && stats.h === 480 && stats.nonblack > stats.w * stats.h * 0.05) goodVideo = stats;
+      }
+    }
+    if (!goodAudio && packs[a.index] && packs[a.index].length) {
+      const frs = await libav.ff_decode_multi(actx, apkt, aframe, packs[a.index]);
+      for (const f of frs) {
+        decodedAudio++;
+        const stats = audioStats(f);
+        if (!goodAudio && stats.amax > 0.01 && stats.ch.length === 2) goodAudio = stats;
+      }
+    }
+    if (res === libav.AVERROR_EOF) break;
+  }
+
+  if (goodVideo) {
+    fs.writeFileSync(path.resolve(__dirname, "frame0.rgba"), goodVideo.rgba);
+    console.log(`VIDEO: ${goodVideo.w}x${goodVideo.h} RGBA bytes=${goodVideo.rgba.length} nonblack=${((goodVideo.nonblack / (goodVideo.w * goodVideo.h)) * 100).toFixed(1)}% Rrange=[${goodVideo.rmin},${goodVideo.rmax}]`);
+    console.log("  wrote build/frame0.rgba (raw RGBA, viewable e.g. in ffmpeg/ImageMagick)");
+  } else {
+    console.log(`VIDEO: no nonblack frame found after ${decodedVideo} decoded frames`);
+  }
+
+  if (goodAudio) {
+    console.log(`AUDIO: fmt=${goodAudio.fmt} planes=${goodAudio.ch.length} nb=${goodAudio.nb} floatRange=[${goodAudio.amin.toFixed(3)},${goodAudio.amax.toFixed(3)}] zeros=${((goodAudio.azero / goodAudio.total) * 100).toFixed(1)}%`);
+  } else {
+    console.log(`AUDIO: no non-silent frame found after ${decodedAudio} decoded frames`);
+  }
+
+  const ok = !!goodVideo && !!goodAudio;
   console.log(ok ? "VERIFY_OK" : "VERIFY_FAIL");
   process.exit(ok ? 0 : 1);
 })().catch(e => { console.error("ERR", e); process.exit(2); });
