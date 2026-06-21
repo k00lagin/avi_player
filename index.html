@@ -1,0 +1,724 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>DivX AVI Player</title>
+<style>
+  :root {
+    --bg: #0e0f13; --panel: #171a21; --panel2: #1f232c;
+    --ink: #e8e9ec; --mut: #8b9099; --acc: #e2b149; --acc2: #f0c674;
+    --err: #ff6b6b; --ok: #5ec27a; --line: #2a2f3a;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; height: 100%;
+    background: var(--bg); color: var(--ink);
+    font: 14px/1.4 -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+  body { display: flex; flex-direction: column; min-height: 100vh; }
+  header { display: flex; align-items: center; gap: 14px; padding: 12px 18px;
+    background: var(--panel); border-bottom: 1px solid var(--line); }
+  header .logo { width: 30px; height: 30px; border-radius: 7px;
+    background: linear-gradient(135deg, var(--acc), #b9842d);
+    display: grid; place-items: center; color: #1a1306; font-weight: 800;
+    box-shadow: 0 1px 0 rgba(255,255,255,.15) inset; }
+  header h1 { font-size: 15px; margin: 0; letter-spacing: .3px; }
+  header .sub { color: var(--mut); font-size: 12px; }
+  header .spacer { flex: 1; }
+  header .ver { color: var(--mut); font-size: 11px; }
+  main { flex: 1; display: grid; grid-template-columns: 1fr 320px; min-height: 0; }
+  @media (max-width: 900px) { main { grid-template-columns: 1fr; } }
+  .stage { position: relative; background: #000; display: flex; align-items: center;
+    justify-content: center; min-height: 0; overflow: hidden; }
+  #video { max-width: 100%; max-height: 100%; width: auto; height: auto;
+    image-rendering: pixelated; background: #000; display: block; }
+  .stage .vframe { position: relative; display: flex; align-items: center;
+    justify-content: center; height: 100%; width: 100%; }
+  .overlay { position: absolute; inset: 0; display: grid; place-items: center;
+    text-align: center; padding: 24px; pointer-events: none;
+    background: radial-gradient(ellipse at center, rgba(0,0,0,.55), rgba(0,0,0,.85)); }
+  .overlay .card { pointer-events: auto; max-width: 460px; }
+  .overlay .big { font-size: 15px; color: var(--ink); margin-bottom: 6px; }
+  .overlay .hint { color: var(--mut); font-size: 12px; margin-bottom: 14px; }
+  .overlay .err { color: var(--err); }
+  .overlay code { background: #000; padding: 1px 5px; border-radius: 4px; color: var(--acc2); }
+  .btn { appearance: none; border: 1px solid var(--line); background: var(--panel2);
+    color: var(--ink); padding: 9px 14px; border-radius: 8px; cursor: pointer;
+    font-size: 13px; transition: .12s; }
+  .btn:hover { border-color: var(--acc); color: var(--acc2); }
+  .btn:disabled { opacity: .45; cursor: default; }
+  .btn.primary { background: linear-gradient(180deg, var(--acc), #c8902a);
+    color: #1a1306; border-color: transparent; font-weight: 700; }
+  .btn.primary:hover { filter: brightness(1.06); color: #1a1306; }
+  aside { background: var(--panel); border-left: 1px solid var(--line); padding: 16px;
+    display: flex; flex-direction: column; gap: 14px; min-height: 0; overflow: auto; }
+  aside h2 { font-size: 11px; text-transform: uppercase; letter-spacing: .08em;
+    color: var(--mut); margin: 4px 0 6px; }
+  .filebox { border: 1px dashed var(--line); border-radius: 10px; padding: 14px;
+    display: flex; flex-direction: column; gap: 10px; background: var(--panel2); }
+  .filebox.drag { border-color: var(--acc); background: #221a0e; }
+  .meta { font-size: 12px; color: var(--mut); }
+  .meta b { color: var(--ink); font-weight: 600; }
+  .meta .row { display: flex; justify-content: space-between; gap: 8px; padding: 3px 0;
+    border-bottom: 1px solid rgba(255,255,255,.04); }
+  .meta .row:last-child { border-bottom: none; }
+  .statusline { font-size: 12px; color: var(--mut); min-height: 16px; }
+  .statusline.ok { color: var(--ok); }
+  .statusline.err { color: var(--err); }
+  footer { background: var(--panel); border-top: 1px solid var(--line); padding: 10px 16px;
+    display: flex; align-items: center; gap: 12px; }
+  .icobtn { width: 34px; height: 34px; border-radius: 8px; border: 1px solid var(--line);
+    background: var(--panel2); color: var(--ink); cursor: pointer; display: grid;
+    place-items: center; transition: .12s; }
+  .icobtn:hover { border-color: var(--acc); color: var(--acc2); }
+  .icobtn:disabled { opacity: .4; cursor: default; }
+  .icobtn svg { width: 16px; height: 16px; display: block; }
+  .scrub { flex: 1; }
+  input[type=range] { -webkit-appearance: none; appearance: none; width: 100%; height: 6px;
+    background: var(--panel2); border-radius: 4px; outline: none; cursor: pointer; }
+  input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; appearance: none;
+    width: 14px; height: 14px; border-radius: 50%; background: var(--acc);
+    border: 2px solid #1a1306; cursor: pointer; }
+  input[type=range]::-moz-range-thumb { width: 14px; height: 14px; border-radius: 50%;
+    background: var(--acc); border: 2px solid #1a1306; cursor: pointer; }
+  .time { font-variant-numeric: tabular-nums; font-size: 12px; color: var(--mut);
+    min-width: 44px; text-align: center; }
+  .volwrap { display: flex; align-items: center; gap: 6px; width: 110px; }
+  .volwrap input[type=range] { width: 80px; }
+  .kbd { color: var(--mut); font-size: 11px; line-height: 1.7; }
+  .kbd kbd { background: var(--panel2); border: 1px solid var(--line); border-radius: 4px;
+    padding: 0 5px; font-size: 11px; }
+</style>
+</head>
+<body>
+<header>
+  <div class="logo">D</div>
+  <div>
+    <h1>DivX AVI Player</h1>
+    <div class="sub">Browser playback for archival DivX&nbsp;5 / MPEG-4 Part&nbsp;2 + MP3 AVI files</div>
+  </div>
+  <div class="spacer"></div>
+  <div class="ver" id="ver">—</div>
+</header>
+
+<main>
+  <div class="stage">
+    <div class="vframe">
+      <canvas id="video" width="640" height="480" hidden></canvas>
+      <div class="overlay" id="overlay">
+        <div class="card">
+          <div class="big" id="ovTitle">Load a decoder to begin</div>
+          <div class="hint" id="ovHint">Initializing the WebAssembly DivX decoder…</div>
+          <div id="ovActions"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <aside>
+    <div>
+      <h2>Source</h2>
+      <div class="filebox" id="filebox">
+        <input type="file" id="fileInput" accept=".avi,video/x-msvideo,video/avi,video/*" hidden>
+        <button class="btn primary" id="openBtn">Open .avi file…</button>
+        <div class="meta" id="fileMeta" style="text-align:center;">No file loaded</div>
+      </div>
+    </div>
+    <div>
+      <h2>Stream info</h2>
+      <div class="meta" id="streamInfo">—</div>
+    </div>
+    <div>
+      <h2>Status</h2>
+      <div class="statusline" id="status">Idle</div>
+    </div>
+    <div class="kbd">
+      <kbd>Space</kbd> play/pause &nbsp; <kbd>←</kbd>/<kbd>→</kbd> seek 5s<br>
+      <kbd>↑</kbd>/<kbd>↓</kbd> volume
+    </div>
+  </aside>
+</main>
+
+<footer>
+  <div class="ctrl">
+    <button class="icobtn" id="playBtn" disabled title="Play / Pause (Space)">
+      <svg viewBox="0 0 24 24" fill="currentColor"><path id="playIcon" d="M8 5v14l11-7z"/></svg>
+    </button>
+  </div>
+  <div class="time" id="curTime">0:00</div>
+  <input type="range" class="scrub" id="seek" min="0" max="1000" value="0" disabled>
+  <div class="time" id="durTime">0:00</div>
+  <div class="volwrap">
+    <svg viewBox="0 0 24 24" fill="currentColor" style="width:16px;height:16px;opacity:.7"><path d="M3 10v4h4l5 5V5L7 10H3z"/></svg>
+    <input type="range" id="vol" min="0" max="1" step="0.01" value="1">
+  </div>
+</footer>
+
+<script>
+"use strict";
+/* =======================================================================
+   DivX AVI Player.
+   Engine: libav.js (custom "divx-mp3-avi" WASM variant) — demuxes AVI and
+   decodes DivX (mpeg4) video + MP3 audio in WebAssembly.
+
+   Timing model (these AVIs are constant-frame-rate and every decoded frame
+   reports pts=0 due to DivX "packed B-frames", so we do NOT use container PTS):
+     - Video frame N -> display time = vBaseTime; vBaseTime += 1/fps
+     - Audio block of nb samples at rate sr -> media time = aBaseTime;
+       aBaseTime += nb/sr
+     - Audio (Web Audio) is the master clock; video frames are drawn when
+       their display time <= currentMediaTime().
+   ======================================================================= */
+
+const LIBAV_JS = "lib/libav-6.8.8.0-divx-mp3-avi.js";
+const AVMEDIA_TYPE_VIDEO = 0, AVMEDIA_TYPE_AUDIO = 1;
+const AV_SAMPLE_FMT_S16P = 6, AV_SAMPLE_FMT_S16 = 1,
+      AV_SAMPLE_FMT_FLTP = 8, AV_SAMPLE_FMT_FLT = 3,
+      AV_SAMPLE_FMT_S32P = 7, AV_SAMPLE_FMT_U8P = 5, AV_SAMPLE_FMT_DBLP = 9;
+const AVSEEK_FLAG_BACKWARD = 1;
+
+const $ = (id) => document.getElementById(id);
+const dom = {
+  canvas: $("video"), overlay: $("overlay"),
+  ovTitle: $("ovTitle"), ovHint: $("ovHint"), ovActions: $("ovActions"),
+  openBtn: $("openBtn"), fileInput: $("fileInput"), filebox: $("filebox"),
+  fileMeta: $("fileMeta"), streamInfo: $("streamInfo"), status: $("status"), ver: $("ver"),
+  playBtn: $("playBtn"), playIcon: $("playIcon"),
+  seek: $("seek"), curTime: $("curTime"), durTime: $("durTime"), vol: $("vol"),
+};
+const ctx2d = dom.canvas.getContext("2d", { alpha: false });
+
+let libav = null, libavReady = false;
+const S = {
+  file: null, fileName: null,
+  fmt_ctx: 0, streams: [], vi: -1, ai: -1,
+  vctx: 0, vpkt: 0, vframe: 0, actx_l: 0, apkt: 0, aframe: 0, rpkt: 0,
+  hasAudio: false,
+  width: 0, height: 0, fps: 0, durationSec: 0, sampleRate: 0, audioCh: 0,
+  // timing (decode positions)
+  vBaseTime: 0, aBaseTime: 0,
+  audioResidual: null,      // leftover MP3 bytes spanning packet boundaries
+  position: 0,              // current media position (advances while playing, frozen while paused)
+  // queues
+  vQueue: [],            // {t, image}
+  audioFeeds: [],        // {mediaTime, channels:[Float32Array], nb, rate}
+  // playback clock anchor
+  mediaStart: 0, wallStart: 0,
+  audioCtx: null, gainNode: null, playing: false, ended: false, eof: false,
+  // pump
+  pumping: false, seekTarget: null, dragging: false, flushing: false,
+};
+
+function setStatus(t, cls) { dom.status.className = "statusline" + (cls ? " " + cls : ""); dom.status.textContent = t; }
+function showOverlay(title, hint, actionsHtml = "", hintCls = "") {
+  dom.overlay.style.display = "grid";
+  dom.ovTitle.textContent = title;
+  dom.ovHint.innerHTML = hint;
+  dom.ovHint.className = "hint" + (hintCls ? " " + hintCls : "");
+  dom.ovActions.innerHTML = actionsHtml;
+}
+function hideOverlay() { dom.overlay.style.display = "none"; }
+function fmtTime(s) {
+  if (!isFinite(s) || s < 0) s = 0; s = Math.floor(s);
+  const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60;
+  const mm = String(m).padStart(h ? 2 : 1, "0"), ss = String(sec).padStart(2, "0");
+  return h ? `${h}:${mm}:${ss}` : `${m}:${ss}`;
+}
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+function escapeHtml(s) { return String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
+
+// ---------------- 1. Load libav.js ---------------------------------------
+async function loadLibav() {
+  showOverlay("Loading DivX decoder", "Downloading / compiling the WebAssembly core…");
+  try {
+    await new Promise((res, rej) => {
+      const s = document.createElement("script");
+      s.src = LIBAV_JS;
+      s.onload = res;
+      s.onerror = () => rej(new Error("Could not load " + LIBAV_JS));
+      document.head.appendChild(s);
+    });
+    if (window.LibAV && !LibAV.base)
+      LibAV.base = LIBAV_JS.substring(0, LIBAV_JS.lastIndexOf("/") + 1);
+    libav = await LibAV.LibAV();
+    libavReady = true;
+    dom.ver.textContent = "libav.js · divx-mp3-avi";
+    showOverlay("Ready", "Click below to choose an AVI file, or drag &amp; drop one onto the sidebar.",
+      `<button class="btn primary" onclick="document.getElementById('fileInput').click()">Open .avi file…</button>`);
+    setStatus("Decoder ready", "ok");
+  } catch (e) {
+    console.error(e);
+    showOverlay("Decoder failed to load",
+      `${escapeHtml(e.message)}<br><br>Expected file: <code>${LIBAV_JS}</code> plus its <code>.wasm.js</code> / <code>.wasm.wasm</code> siblings. ` +
+      `Serve over HTTP — run <code>server.cmd</code>; do not open this HTML directly (file://).`,
+      "", "err");
+    setStatus("Decoder load failed: " + e.message, "err");
+  }
+}
+
+// ---------------- 2. Open file / init demuxer+decoders -------------------
+async function openFile(file) {
+  if (!libavReady) return;
+  await stopAndCleanup();
+  S.file = file; S.fileName = file.name;
+  dom.fileMeta.innerHTML = `<b>${escapeHtml(file.name)}</b><br>${(file.size / 1048576).toFixed(1)} MB`;
+  showOverlay("Opening", `Reading <b>${escapeHtml(file.name)}</b> into the decoder…`);
+  setStatus("Reading file…");
+
+  try {
+    const buf = new Uint8Array(await file.arrayBuffer());
+    await libav.writeFile("in.avi", buf);
+    setStatus("Probing container…");
+    const [fmt_ctx, streams] = await libav.ff_init_demuxer_file("in.avi");
+    S.fmt_ctx = fmt_ctx; S.streams = streams;
+
+    let vi = -1, ai = -1;
+    for (const st of streams) {
+      if (st.codec_type === AVMEDIA_TYPE_VIDEO && vi === -1) vi = st.index;
+      else if (st.codec_type === AVMEDIA_TYPE_AUDIO && ai === -1) ai = st.index;
+    }
+    if (vi === -1) throw new Error("No video stream found.");
+    S.vi = vi; S.ai = ai; S.hasAudio = (ai >= 0);
+    const vstream = streams[vi], astream = S.hasAudio ? streams[ai] : null;
+
+    // real codec params (needed for DivX extradata)
+    const vcp = await libav.AVStream_codecpar(vstream.ptr);
+    const [, vctx, vpkt, vframe] = await libav.ff_init_decoder(
+      vstream.codec_id, { codecpar: vcp, time_base: [vstream.time_base_num, vstream.time_base_den] });
+    S.vctx = vctx; S.vpkt = vpkt; S.vframe = vframe;
+
+    if (S.hasAudio) {
+      const acp = await libav.AVStream_codecpar(astream.ptr);
+      const [, actx, apkt, aframe] = await libav.ff_init_decoder(
+        astream.codec_id, { codecpar: acp, time_base: [astream.time_base_num, astream.time_base_den] });
+      S.actx_l = actx; S.apkt = apkt; S.aframe = aframe;
+      S.sampleRate = await libav.AVCodecContext_sample_rate(actx);
+      S.audioCh = await libav.AVCodecContext_channels(actx);
+      if (!S.sampleRate) S.sampleRate = astream.codecpar && astream.codecpar.sample_rate || 44100;
+    }
+    S.rpkt = await libav.av_packet_alloc();
+
+    // geometry / fps / duration
+    S.width = await libav.AVCodecContext_width(vctx);
+    S.height = await libav.AVCodecContext_height(vctx);
+    dom.canvas.width = S.width; dom.canvas.height = S.height;
+    S.fps = vstream.time_base_num ? (vstream.time_base_den / vstream.time_base_num) : 0;
+
+    let dur = 0;
+    try { const du = Number(await libav.AVFormatContext_duration(fmt_ctx)); if (du > 0) dur = du / 1e6; } catch (e) {}
+    if ((!dur || dur <= 0) && S.fps > 0 && vstream.duration > 0) dur = vstream.duration / S.fps;
+    S.durationSec = dur || 0;
+
+    const a = S.hasAudio ? `, MP3 ${S.sampleRate} Hz · ${S.audioCh}ch` : ", no audio";
+    dom.streamInfo.innerHTML = `
+      <div class="row"><span>Container</span><b>AVI</b></div>
+      <div class="row"><span>Video</span><b>DivX · MPEG-4 Pt.2</b></div>
+      <div class="row"><span>Resolution</span><b>${S.width}×${S.height}</b></div>
+      <div class="row"><span>Frame rate</span><b>${S.fps ? S.fps.toFixed(3) : "—"} fps</b></div>
+      <div class="row"><span>Audio</span><b>${S.hasAudio ? "MP3" : "none"}${S.hasAudio ? ` · ${S.sampleRate} Hz` : ""}</b></div>
+      <div class="row"><span>Duration</span><b>${fmtTime(S.durationSec)}</b></div>${a}
+    `;
+
+    dom.seek.disabled = false; dom.playBtn.disabled = false;
+    dom.durTime.textContent = fmtTime(S.durationSec);
+    dom.curTime.textContent = "0:00"; dom.seek.value = 0;
+
+    // reset decode positions / clock
+    S.vBaseTime = 0; S.aBaseTime = 0;
+    S.position = 0; S.mediaStart = 0; S.wallStart = 0;
+    S.audioResidual = null;
+    S.vQueue.length = 0; S.audioFeeds.length = 0;
+    S.eof = false; S.ended = false;
+
+    dom.canvas.hidden = false;
+    hideOverlay();
+    setStatus("Playing", "ok");
+
+    await play();
+    startPump();
+  } catch (e) {
+    console.error(e);
+    showOverlay("Could not open this file",
+      `${escapeHtml(e.message || String(e))}<br><br>Supported: AVI with DivX/Xvid (MPEG-4 Part 2) video and MP3 audio.`,
+      "", "err");
+    setStatus("Open failed: " + (e.message || e), "err");
+  }
+}
+
+// ---------------- 3. Decode pump ----------------------------------------
+function startPump() {
+  if (S.pumping) return;
+  S.pumping = true; S.eof = false; S.ended = false;
+  pumpLoop();
+}
+
+async function pumpLoop() {
+  const frameDur = S.fps > 0 ? (1 / S.fps) : (1 / 29.97);
+  while (S.pumping && libavReady && S.fmt_ctx) {
+    if (S.seekTarget !== null) { const t = S.seekTarget; S.seekTarget = null; await doSeek(t); }
+
+    // backpressure (pause-aware: when paused, currentMediaTime is frozen)
+    const now = currentMediaTime();
+    if (S.vQueue.length > 120) { await sleep(20); continue; }
+    if (S.vBaseTime - now > 3.0) { await sleep(20); continue; }
+    if (S.hasAudio && (S.aBaseTime - now) > 2.5) { await sleep(20); continue; }
+
+    if (S.eof) {
+      if (S.vQueue.length === 0 && (!S.hasAudio || (S.audioFeeds.length === 0 && audioDone()))) {
+        if (!S.ended) { S.ended = true; onEnd(); }
+      }
+      await sleep(60); continue;
+    }
+
+    try {
+      const [res, packs] = await libav.ff_read_frame_multi(S.fmt_ctx, S.rpkt, { limit: 1 << 19 });
+      if (packs[S.vi] && packs[S.vi].length) await decodeVideo(packs[S.vi], frameDur);
+      if (S.hasAudio && packs[S.ai] && packs[S.ai].length) await decodeAudio(packs[S.ai]);
+      if (res === libav.AVERROR_EOF) {
+        S.eof = true;
+        try {
+          const vf = await libav.ff_decode_multi(S.vctx, S.vpkt, S.vframe, [], { copyoutFrame: "video", fin: true });
+          for (const f of vf) { S.vQueue.push({ t: S.vBaseTime, image: frameToImageData(f) }); S.vBaseTime += frameDur; }
+          if (S.hasAudio) {
+          const af = await libav.ff_decode_multi(S.actx_l, S.apkt, S.aframe, [], { fin: true });
+          for (const f of af) feedAudio(f);
+          S.audioResidual = null;
+          scheduleAudio();
+        }
+        } catch (e) { console.warn("flush error", e); }
+      }
+    } catch (e) {
+      console.error("pump error", e);
+      setStatus("Decode error: " + (e.message || e), "err");
+      await sleep(120);
+    }
+    await sleep(0);
+  }
+}
+
+async function decodeVideo(packets, frameDur) {
+  const frames = await libav.ff_decode_multi(S.vctx, S.vpkt, S.vframe, packets, { copyoutFrame: "video" });
+  for (const f of frames) {
+    S.vQueue.push({ t: S.vBaseTime, image: frameToImageData(f) });
+    S.vBaseTime += frameDur;
+  }
+}
+
+async function decodeAudio(packets) {
+  if (!S.hasAudio) return;
+  // AVI MP3 audio may be chunked without regard to frame boundaries, so we
+  // re-frame the byte stream ourselves (0xFFE sync + computed frame size) and
+  // keep any partial frame for the next batch.
+  let total = S.audioResidual ? S.audioResidual.length : 0;
+  for (const p of packets) total += (p.data ? p.data.length : 0);
+  const stream = new Uint8Array(total);
+  let off = 0;
+  if (S.audioResidual) { stream.set(S.audioResidual, 0); off = S.audioResidual.length; S.audioResidual = null; }
+  for (const p of packets) { if (p.data && p.data.length) { stream.set(p.data, off); off += p.data.length; } }
+  const frames = [];
+  let i = 0;
+  while (i + 4 <= stream.length) {
+    const sz = mp3FrameLength(stream, i);
+    if (sz <= 0) { i++; continue; }          // no valid sync — resync (rare)
+    if (i + sz > stream.length) break;        // incomplete tail — residual
+    frames.push(new Uint8Array(stream.subarray(i, i + sz)));  // copy (independent buffer for safe worker transfer)
+    i += sz;
+  }
+  S.audioResidual = (i < stream.length) ? new Uint8Array(stream.subarray(i)) : null;
+  if (!frames.length) return;
+  const frs = await libav.ff_decode_multi(S.actx_l, S.apkt, S.aframe,
+    frames.map(f => ({ data: f })));
+  for (const f of frs) feedAudio(f);
+  scheduleAudio();
+}
+
+// MPEG audio (Layer III) frame length from a 4-byte header at position i.
+function mp3FrameLength(buf, i) {
+  if (i + 4 > buf.length) return -1;
+  const b1 = buf[i + 1];
+  if (buf[i] !== 0xFF || (b1 & 0xE0) !== 0xE0) return -1;       // no frame sync
+  const ver = (b1 >> 3) & 3, layer = (b1 >> 1) & 3;
+  if (ver === 1 || layer !== 1) return -1;                       // reserved / not Layer III
+  const b2 = buf[i + 2];
+  const brIdx = (b2 >> 4) & 0xF, srIdx = (b2 >> 2) & 3, pad = (b2 >> 1) & 1;
+  if (brIdx === 0 || brIdx === 15 || srIdx === 3) return -1;
+  const br1 = [0,32,40,48,56,64,80,96,112,128,160,192,224,256,320,0];
+  const br2 = [0,8,16,24,32,40,48,56,64,80,96,112,128,144,160,0];
+  const sr1 = [44100,48000,32000,0], sr2 = [22050,24000,16000,0], sr25 = [11025,12000,8000,0];
+  let kbps, sr;
+  if (ver === 3) { kbps = br1[brIdx]; sr = sr1[srIdx]; }
+  else if (ver === 2) { kbps = br2[brIdx]; sr = sr2[srIdx]; }
+  else { kbps = br2[brIdx]; sr = sr25[srIdx]; }
+  if (!kbps || !sr) return -1;
+  const coeff = (ver === 3) ? 144 : 72;                          // samples-per-frame factor, Layer III
+  const sz = Math.floor(coeff * kbps * 1000 / sr) + pad;
+  return sz > 0 ? sz : -1;
+}
+
+function feedAudio(f) {
+  const data = audioFrameToFloat(f);
+  if (!data || data.nb === 0) return;
+  S.audioFeeds.push({ mediaTime: S.aBaseTime, channels: data.channels, nb: data.nb, rate: data.rate });
+  S.aBaseTime += data.nb / data.rate;
+}
+
+// ---------------- YUV420P -> RGBA (BT.601 limited range) ----------------
+function frameToImageData(f) {
+  const w = f.width || S.width, h = f.height || S.height;
+  const data = f.data;
+  const lay = f.layout;
+  const yO = lay[0].offset, yS = lay[0].stride;
+  const uO = lay[1].offset, uS = lay[1].stride;
+  const vO = lay[2].offset, vS = lay[2].stride;
+  const img = ctx2d.createImageData(w, h);
+  const out32 = new Uint32Array(img.data.buffer);
+  for (let y = 0; y < h; y++) {
+    const yRow = yO + y * yS;
+    const uvR = (y >> 1);
+    const uRow = uO + uvR * uS, vRow = vO + uvR * vS;
+    let o32 = y * w;
+    for (let x = 0; x < w; x++) {
+      const Y = data[yRow + x];
+      const U = data[uRow + (x >> 1)];
+      const V = data[vRow + (x >> 1)];
+      const c = Y - 16, d = U - 128, e = V - 128;
+      const r = (298 * c + 409 * e + 128) >> 8;
+      const g = (298 * c - 100 * d - 208 * e + 128) >> 8;
+      const b = (298 * c + 516 * d + 128) >> 8;
+      out32[o32++] = 0xff000000 |
+        ((b < 0 ? 0 : b > 255 ? 255 : b) << 16) |
+        ((g < 0 ? 0 : g > 255 ? 255 : g) << 8) |
+        (r < 0 ? 0 : r > 255 ? 255 : r);
+    }
+  }
+  return img;
+}
+
+// ---------------- audio plane(s) -> Float32 per channel -----------------
+function audioFrameToFloat(f) {
+  const fmt = f.format, nb = f.nb_samples, ch = f.channels || 1;
+  const planes = f.data;
+  if (!planes || !planes.length || !nb) return null;
+  const planar = (fmt === AV_SAMPLE_FMT_S16P || fmt === AV_SAMPLE_FMT_FLTP ||
+                  fmt === AV_SAMPLE_FMT_S32P || fmt === AV_SAMPLE_FMT_U8P || fmt === AV_SAMPLE_FMT_DBLP);
+  const out = [];
+  const bps = (fmt === AV_SAMPLE_FMT_S16 || fmt === AV_SAMPLE_FMT_S16P) ? 2
+            : (fmt === AV_SAMPLE_FMT_S32 || fmt === AV_SAMPLE_FMT_S32P) ? 4
+            : (fmt === AV_SAMPLE_FMT_FLT || fmt === AV_SAMPLE_FMT_FLTP ||
+               fmt === AV_SAMPLE_FMT_DBLP) ? 4 : 1;
+  const count = planar ? nb : nb * ch;
+  try {
+    if (planar) {
+      for (let c = 0; c < ch; c++) {
+        const p = planes[c];
+        out.push(convPlane(p, fmt, nb, 0, 1, bps));
+      }
+    } else {
+      const p = planes[0];
+      for (let c = 0; c < ch; c++) out.push(convPlane(p, fmt, nb, c, ch, bps));
+    }
+  } catch (e) { console.warn("audio copyout failed", e, "fmt", fmt); return null; }
+  void count;
+  return { channels: out, nb, rate: f.sample_rate || S.sampleRate, ch };
+}
+
+function convPlane(plane, fmt, count, offset, stride, bps) {
+  const fl = new Float32Array(count);
+  if (fmt === AV_SAMPLE_FMT_FLTP || fmt === AV_SAMPLE_FMT_FLT) {
+    const v = new Float32Array(plane.buffer, plane.byteOffset, count * stride);
+    for (let i = 0; i < count; i++) fl[i] = v[i * stride + offset];
+  } else if (fmt === AV_SAMPLE_FMT_S16P || fmt === AV_SAMPLE_FMT_S16) {
+    const v = new Int16Array(plane.buffer, plane.byteOffset, count * stride);
+    for (let i = 0; i < count; i++) fl[i] = v[i * stride + offset] / 32768;
+  } else if (fmt === AV_SAMPLE_FMT_S32P) {
+    const v = new Int32Array(plane.buffer, plane.byteOffset, count * stride);
+    for (let i = 0; i < count; i++) fl[i] = v[i * stride + offset] / 2147483648;
+  } else {
+    for (let i = 0; i < count; i++) fl[i] = (plane[i * stride + offset] - 128) / 128;
+  }
+  return fl;
+}
+
+// ---------------- 4. Audio scheduling + clock ---------------------------
+function ensureAudioGraph() {
+  if (S.audioCtx) return;
+  const AC = window.AudioContext || window.webkitAudioContext;
+  S.audioCtx = new AC();
+  S.gainNode = S.audioCtx.createGain();
+  S.gainNode.gain.value = parseFloat(dom.vol.value);
+  S.gainNode.connect(S.audioCtx.destination);
+}
+
+function currentMediaTime() {
+  if (!S.playing) return S.position;
+  if (S.hasAudio && S.audioCtx) {
+    return S.mediaStart + Math.max(0, S.audioCtx.currentTime - S.wallStart);
+  }
+  return S.mediaStart + (performance.now() - S.wallStart) / 1000;
+}
+
+function scheduleAudio() {
+  if (!S.hasAudio || !S.audioCtx) return;
+  const lookahead = 1.0; // schedule up to 1s ahead
+  const nowMedia = currentMediaTime();
+  while (S.audioFeeds.length && S.audioFeeds[0].mediaTime <= nowMedia + lookahead) {
+    const a = S.audioFeeds.shift();
+    try {
+      const buf = S.audioCtx.createBuffer(a.channels.length, a.nb, a.rate);
+      for (let c = 0; c < a.channels.length; c++) buf.getChannelData(c).set(a.channels[c]);
+      const src = S.audioCtx.createBufferSource();
+      src.buffer = buf; src.connect(S.gainNode);
+      let scheduleAt = S.wallStart + (a.mediaTime - S.mediaStart);
+      if (scheduleAt < S.audioCtx.currentTime) scheduleAt = S.audioCtx.currentTime;
+      src.start(scheduleAt);
+    } catch (e) { console.warn("audio schedule err", e); }
+  }
+}
+
+function audioDone() {
+  if (!S.audioCtx) return true;
+  // nothing queued for WebAudio and no pending feeds
+  return S.audioCtx.currentTime - S.wallStart >= (S.aBaseTime - S.mediaStart) - 0.01;
+}
+
+// ---------------- 5. Presentation loop ----------------------------------
+function rafLoop() {
+  if (S.fmt_ctx && S.vQueue.length) {
+    const now = currentMediaTime();
+    // advance past due frames
+    while (S.vQueue.length >= 2 && S.vQueue[1].t <= now) S.vQueue.shift();
+    const cur = S.vQueue[0];
+    if (cur && cur.t <= now + 0.05) ctx2d.putImageData(cur.image, 0, 0);
+  }
+  if (S.fmt_ctx) {
+    const now = currentMediaTime();
+    if (!S.dragging && isFinite(now)) {
+      dom.curTime.textContent = fmtTime(now);
+      if (S.durationSec > 0) dom.seek.value = Math.min(1000, Math.max(0, (now / S.durationSec) * 1000));
+    }
+    if (S.hasAudio) scheduleAudio(); // keep feeding WebAudio each frame
+  }
+  requestAnimationFrame(rafLoop);
+}
+requestAnimationFrame(rafLoop);
+
+// ---------------- 6. Transport ------------------------------------------
+async function play() {
+  if (!S.fmt_ctx) return;
+  ensureAudioGraph();
+  try { await S.audioCtx.resume(); } catch (e) {}
+  S.mediaStart = S.position;
+  S.wallStart = (S.hasAudio && S.audioCtx) ? S.audioCtx.currentTime : performance.now();
+  S.playing = true; S.ended = false;
+  setPlayIcon(true);
+  setStatus("Playing");
+  scheduleAudio();
+}
+
+function pause() {
+  if (!S.playing) return;
+  S.position = currentMediaTime();
+  S.playing = false;
+  setPlayIcon(false);
+  if (S.audioCtx) { try { S.audioCtx.suspend(); } catch (e) {} }
+  setStatus("Paused");
+}
+
+function setPlayIcon(isPlaying) {
+  dom.playIcon.setAttribute("d", isPlaying ? "M6 5h4v14H6zM14 5h4v14h-4z" : "M8 5v14l11-7z");
+}
+
+function togglePlay() {
+  if (!S.fmt_ctx) return;
+  if (S.ended) { S.ended = false; S.position = 0; S.seekTarget = 0; }
+  if (S.playing) pause(); else play();
+}
+
+function onEnd() {
+  pause();
+  setStatus("Ended", "ok");
+}
+
+function seekToRatio(r) { if (!S.fmt_ctx) return; S.seekTarget = r * (S.durationSec || currentMediaTime()); }
+
+async function doSeek(t) {
+  if (!libav || !S.fmt_ctx) return;
+  S.flushing = true;
+  try {
+    if (typeof libav.avformat_seek_file === "function") {
+      const us = Math.max(0, Math.round(t * 1000000));
+      await libav.avformat_seek_file(S.fmt_ctx, -1, Math.max(0, us - 1000000), us, us + 1000000, AVSEEK_FLAG_BACKWARD);
+    } else if (typeof libav.av_seek_frame === "function") {
+      await libav.av_seek_frame(S.fmt_ctx, -1, Math.max(0, Math.round(t * 1000000)), AVSEEK_FLAG_BACKWARD);
+    }
+    if (typeof libav.avcodec_flush_buffers === "function") {
+      await libav.avcodec_flush_buffers(S.vctx);
+      if (S.hasAudio) await libav.avcodec_flush_buffers(S.actx_l);
+    }
+  } catch (e) { console.warn("seek failed", e); }
+  S.vQueue.length = 0; S.audioFeeds.length = 0;
+  S.eof = false; S.ended = false;
+  S.vBaseTime = t; S.aBaseTime = t;
+  S.position = t; S.mediaStart = t;
+  S.audioResidual = null;
+  if (S.audioCtx) {
+    try { await S.audioCtx.resume(); } catch (e) {}
+    S.wallStart = S.audioCtx.currentTime;
+  } else { S.wallStart = performance.now(); }
+  S.flushing = false;
+  setStatus(t === 0 ? "Restarted" : ("Seeked to " + fmtTime(t)));
+}
+
+async function stopAndCleanup() {
+  S.pumping = false;
+  try {
+    if (S.vctx) await libav.ff_free_decoder(S.vctx, S.vpkt, S.vframe).catch(() => {});
+    if (S.actx_l) await libav.ff_free_decoder(S.actx_l, S.apkt, S.aframe).catch(() => {});
+    if (S.fmt_ctx) await libav.avformat_close_input_js(S.fmt_ctx).catch(() => {});
+  } catch (e) {}
+  S.vctx = S.actx_l = S.fmt_ctx = 0; S.rpkt = 0;
+  S.vQueue.length = 0; S.audioFeeds.length = 0;
+  S.audioResidual = null;
+  S.vi = S.ai = -1; S.eof = false; S.ended = false;
+  S.vBaseTime = S.aBaseTime = 0; S.mediaStart = 0; S.position = 0;
+  if (S.audioCtx) { try { S.audioCtx.close(); } catch (e) {} S.audioCtx = null; }
+  S.hasAudio = false; S.playing = false; setPlayIcon(false);
+  dom.canvas.hidden = true;
+}
+
+// ---------------- 7. Wiring ---------------------------------------------
+dom.openBtn.addEventListener("click", () => dom.fileInput.click());
+dom.fileInput.addEventListener("change", () => { if (dom.fileInput.files[0]) openFile(dom.fileInput.files[0]); });
+dom.filebox.addEventListener("dragover", e => { e.preventDefault(); dom.filebox.classList.add("drag"); });
+dom.filebox.addEventListener("dragleave", () => dom.filebox.classList.remove("drag"));
+dom.filebox.addEventListener("drop", e => {
+  e.preventDefault(); dom.filebox.classList.remove("drag");
+  const f = e.dataTransfer.files[0]; if (f) openFile(f);
+});
+dom.playBtn.addEventListener("click", togglePlay);
+dom.vol.addEventListener("input", () => { if (S.gainNode) S.gainNode.gain.value = parseFloat(dom.vol.value); });
+dom.seek.addEventListener("pointerdown", () => { S.dragging = true; });
+dom.seek.addEventListener("pointerup", () => { S.dragging = false; });
+dom.seek.addEventListener("input", () => {
+  if (!S.durationSec) return;
+  dom.curTime.textContent = fmtTime((dom.seek.value / 1000) * S.durationSec);
+});
+dom.seek.addEventListener("change", () => { if (S.durationSec) seekToRatio(dom.seek.value / 1000); });
+document.addEventListener("keydown", e => {
+  if (e.target.tagName === "INPUT") return;
+  if (e.code === "Space") { e.preventDefault(); togglePlay(); }
+  else if (e.code === "ArrowRight") { seekToRatio(Math.min(1, (currentMediaTime() + 5) / (S.durationSec || 1))); }
+  else if (e.code === "ArrowLeft") { seekToRatio(Math.max(0, (currentMediaTime() - 5) / (S.durationSec || 1))); }
+  else if (e.code === "ArrowUp") { dom.vol.value = Math.min(1, parseFloat(dom.vol.value) + 0.05); dom.vol.dispatchEvent(new Event("input")); }
+  else if (e.code === "ArrowDown") { dom.vol.value = Math.max(0, parseFloat(dom.vol.value) - 0.05); dom.vol.dispatchEvent(new Event("input")); }
+});
+
+// Insurance against browsers that start the AudioContext suspended despite the
+// open-file gesture: any later pointer/keyboard interaction resumes it.
+const _unlock = () => { if (S.audioCtx && S.audioCtx.state === "suspended") S.audioCtx.resume().catch(() => {}); };
+window.addEventListener("pointerdown", _unlock);
+window.addEventListener("keydown", _unlock);
+
+loadLibav();
+</script>
+</body>
+</html>
