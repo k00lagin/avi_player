@@ -6,10 +6,18 @@
 #    lib/libav-<ver>-divx-mp3-avi.{js, wasm.js, wasm.wasm}
 #
 #  Idempotent: re-running skips already-done steps.
+#
+#  Compliance note: upstream refs are pinned so the distributed WASM can be
+#  rebuilt from the same libav.js/FFmpeg/Emscripten inputs.
 # ============================================================================
 set -euo pipefail
 
 VARIANT="divx-mp3-avi"
+LIBAVJS_REF="${LIBAVJS_REF:-192bc3aa1979d2fd0b5658471d5ff94ea303587c}"
+LIBAVJS_EXPECTED_VER="${LIBAVJS_EXPECTED_VER:-6.8.8.0}"
+FFMPEG_VERSION="${FFMPEG_VERSION:-8.0}"
+EMSDK_REF="${EMSDK_REF:-298ea18bebd6e65c45e35e39755c989a90058c77}"
+EMSDK_VERSION="${EMSDK_VERSION:-6.0.0}"
 # NOTE: "avformat" and "avcodec" are the COMPONENT fragments that emit the
 # JS wrappers (writeFile, ff_init_demuxer_file, ff_decode_multi, etc.). Without
 # them the demuxer/decoder/*-gated wrappers are not exported. demuxer-avi /
@@ -31,6 +39,10 @@ echo " libav.js custom variant build: $VARIANT"
 echo " $(date)"
 echo " work=$WORK"
 echo " dest=$DEST"
+echo " libav.js ref=$LIBAVJS_REF"
+echo " FFmpeg version=$FFMPEG_VERSION"
+echo " emsdk ref=$EMSDK_REF"
+echo " emsdk version=$EMSDK_VERSION"
 echo "==========================================================="
 
 # ---- 0. Dependency check --------------------------------------------------
@@ -48,17 +60,20 @@ node --version
 # ---- 1. emsdk -------------------------------------------------------------
 if [ ! -d "$WORK/emsdk/.git" ]; then
   echo "[1/5] cloning emsdk..."
-  git clone --depth 1 https://github.com/emscripten-core/emsdk.git "$WORK/emsdk"
+  git clone https://github.com/emscripten-core/emsdk.git "$WORK/emsdk"
 fi
 cd "$WORK/emsdk"
-echo "[1/5] updating emsdk..."
-git pull --rebase --autostash || true
-if [ ! -d "$HOME/.emsdk_portable" ] || [ ! -f "$HOME/.emsdk_portable/.emscripten" ]; then
-  echo "[1/5] installing latest emsdk..."
-  ./emsdk install latest
+echo "[1/5] checking out pinned emsdk..."
+if ! git diff --quiet || ! git diff --cached --quiet; then
+  echo "ERROR: tracked changes exist in $WORK/emsdk; commit/stash them before rebuilding."
+  exit 1
 fi
-echo "[1/5] activating emsdk..."
-./emsdk activate latest
+git fetch --tags origin
+git -c advice.detachedHead=false checkout --detach "$EMSDK_REF"
+echo "[1/5] installing emsdk $EMSDK_VERSION..."
+./emsdk install "$EMSDK_VERSION"
+echo "[1/5] activating emsdk $EMSDK_VERSION..."
+./emsdk activate "$EMSDK_VERSION"
 # shellcheck disable=SC1091
 source "$WORK/emsdk/emsdk_env.sh" 2>/dev/null || true
 emcc --version | head -1
@@ -70,16 +85,24 @@ if [ ! -d "$WORK/libav.js/.git" ]; then
   git clone https://github.com/Yahweasel/libav.js.git "$WORK/libav.js"
 fi
 cd "$WORK/libav.js"
-echo "[2/5] updating libav.js..."
-git fetch --tags
-git checkout master
-git pull --rebase --autostash || true
+echo "[2/5] checking out pinned libav.js..."
+if ! git diff --quiet || ! git diff --cached --quiet; then
+  echo "ERROR: tracked changes exist in $WORK/libav.js; commit/stash them before rebuilding."
+  exit 1
+fi
+git fetch --tags origin
+git -c advice.detachedHead=false checkout --detach "$LIBAVJS_REF"
+echo "[2/5] libav.js checkout: $(git describe --tags --always --dirty) ($(git rev-parse HEAD))"
 
 echo "[2/5] npm install..."
 npm install
 
 LIBAVJS_VER="$(make print-version)"
 echo "[ok] libav.js version = $LIBAVJS_VER"
+if [ "$LIBAVJS_VER" != "$LIBAVJS_EXPECTED_VER" ]; then
+  echo "ERROR: expected libav.js version $LIBAVJS_EXPECTED_VER, got $LIBAVJS_VER."
+  exit 1
+fi
 
 # ---- 3. create the custom variant ----------------------------------------
 echo "[3/5] creating variant '$VARIANT' with fragments: $FRAGMENTS"
@@ -111,6 +134,23 @@ cp -v "dist/libav-${LIBAVJS_VER}-${VARIANT}.wasm.wasm" "$DEST/"
 cp -v "dist/libav-${LIBAVJS_VER}-${VARIANT}.js"       "$DEST/libav-${VARIANT}.js"
 cp -v "dist/libav-${LIBAVJS_VER}-${VARIANT}.wasm.js"  "$DEST/libav-${VARIANT}.wasm.js"
 cp -v "dist/libav-${LIBAVJS_VER}-${VARIANT}.wasm.wasm" "$DEST/libav-${VARIANT}.wasm.wasm"
+
+PROVENANCE="$DEST/libav-${LIBAVJS_VER}-${VARIANT}.provenance.txt"
+{
+  echo "variant=$VARIANT"
+  echo "libavjs_version=$LIBAVJS_VER"
+  echo "libavjs_ref=$(git rev-parse HEAD)"
+  echo "libavjs_describe=$(git describe --tags --always --dirty)"
+  echo "ffmpeg_version=$FFMPEG_VERSION"
+  echo "emsdk_ref=$EMSDK_REF"
+  echo "emsdk_version=$EMSDK_VERSION"
+  echo "emcc_version=$(emcc --version | head -1)"
+  echo "fragments=$FRAGMENTS"
+  echo
+  echo "ffmpeg_config:"
+  cat "configs/configs/$VARIANT/ffmpeg-config.txt"
+} > "$PROVENANCE"
+cp -v "$PROVENANCE" "$DEST/libav-${VARIANT}.provenance.txt"
 
 echo "==========================================================="
 echo " DONE. Files in $DEST :"

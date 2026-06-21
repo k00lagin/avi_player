@@ -1,0 +1,17 @@
+variant=divx-mp3-avi
+libavjs_version=6.8.8.0
+libavjs_ref=192bc3aa1979d2fd0b5658471d5ff94ea303587c
+libavjs_describe=v6.8.8.0-20-g192bc3a
+ffmpeg_version=8.0
+emsdk_ref=298ea18bebd6e65c45e35e39755c989a90058c77
+emsdk_version=6.0.0
+emcc_version=emcc (Emscripten gcc/clang-like replacement + linker emulating GNU ld) 6.0.0 (afa15e0c56d1292e073c2c91bafc1d5e0cdf0dd3)
+fragments=["avformat","avcodec","demuxer-avi","parser-mpeg4video","decoder-mpeg4","parser-mp3","decoder-mp3"]
+
+ffmpeg_config:
+--enable-protocol=data --enable-protocol=file
+--enable-demuxer=avi
+--enable-parser=mpeg4video
+--enable-decoder=mpeg4
+--enable-parser=mp3
+--enable-decoder=mp3
