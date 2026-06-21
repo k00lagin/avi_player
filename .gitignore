@@ -1,3 +1,4 @@
 *.avi
+!demo_bigbuckbunny.avi
 *.rgba
 *.log
