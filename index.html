@@ -51,6 +51,7 @@
   .btn.primary { background: linear-gradient(180deg, var(--acc), #c8902a);
     color: #1a1306; border-color: transparent; font-weight: 700; }
   .btn.primary:hover { filter: brightness(1.06); color: #1a1306; }
+  .overlay-actions { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }
   .info-toggle { position: absolute; top: 14px; right: 14px; z-index: 5; font-size: 16px; font-weight: 700; }
   .info-popover { position: absolute; top: 56px; right: 14px; z-index: 6;
     width: min(320px, calc(100% - 28px)); max-height: calc(100% - 70px);
@@ -107,6 +108,7 @@
   </div>
   <div class="spacer"></div>
   <input type="file" id="fileInput" accept=".avi,video/x-msvideo,video/avi,video/*" hidden>
+  <button class="btn" id="demoBtn">Open demo video</button>
   <button class="btn primary" id="openBtn">Open .avi file...</button>
   <div class="ver" id="ver">-</div>
 </header>
@@ -176,13 +178,14 @@
 import { createAviPlayer } from "./src/avi-player.js";
 
 const LIBAV_JS = "lib/libav-6.8.8.0-divx-mp3-avi.js";
+const DEMO_VIDEO_URL = "demo_bigbuckbunny.avi";
 
 const $ = (id) => document.getElementById(id);
 const dom = {
   stage: document.querySelector(".stage"),
   canvas: $("video"), overlay: $("overlay"),
   ovTitle: $("ovTitle"), ovHint: $("ovHint"), ovActions: $("ovActions"),
-  openBtn: $("openBtn"), fileInput: $("fileInput"),
+  openBtn: $("openBtn"), demoBtn: $("demoBtn"), fileInput: $("fileInput"),
   infoBtn: $("infoBtn"), infoPanel: $("infoPanel"), infoCloseBtn: $("infoCloseBtn"),
   fileMeta: $("fileMeta"), streamInfo: $("streamInfo"), status: $("status"), ver: $("ver"),
   playBtn: $("playBtn"), playIcon: $("playIcon"),
@@ -323,6 +326,32 @@ async function openFile(file) {
   }
 }
 
+async function openDemoVideo() {
+  const demoName = DEMO_VIDEO_URL.split("/").pop() || "demo.avi";
+  dom.demoBtn.disabled = true;
+  showOverlay("Opening demo", `Downloading <b>${escapeHtml(demoName)}</b>...`);
+  try {
+    const response = await fetch(DEMO_VIDEO_URL);
+    if (!response.ok) throw new Error(`Demo video unavailable (${response.status})`);
+    const blob = await response.blob();
+    const demoFile = typeof File === "function"
+      ? new File([blob], demoName, { type: blob.type || "video/x-msvideo" })
+      : Object.assign(blob, { name: demoName });
+    await openFile(demoFile);
+  } catch (error) {
+    const message = error.message || String(error);
+    setStatus("Demo load failed: " + message, "err");
+    showOverlay(
+      "Could not open demo video",
+      `${escapeHtml(message)}<br><br>Serve over HTTP with <code>server.cmd</code>; browser file mode cannot fetch the demo asset.`,
+      "",
+      "err",
+    );
+  } finally {
+    dom.demoBtn.disabled = false;
+  }
+}
+
 async function togglePlay() {
   await player.toggle();
   setPlayIcon(player.getState().playing);
@@ -339,8 +368,8 @@ showOverlay("Loading DivX decoder", "Downloading / compiling the WebAssembly cor
 player.init()
   .then(() => {
     dom.ver.textContent = "libav.js / divx-mp3-avi";
-    showOverlay("Ready", "Click below to choose an AVI file, or drag and drop one onto the video area.",
-      `<button class="btn primary" data-open-file>Open .avi file...</button>`);
+    showOverlay("Ready", "Open the bundled demo video, choose an AVI file, or drag and drop one onto the video area.",
+      `<div class="overlay-actions"><button class="btn" data-open-demo>Open demo video</button><button class="btn primary" data-open-file>Open .avi file...</button></div>`);
   })
   .catch((error) => {
     console.error(error);
@@ -355,8 +384,10 @@ player.init()
 let dragging = false;
 
 dom.ovActions.addEventListener("click", (event) => {
+  if (event.target.closest("[data-open-demo]")) openDemoVideo();
   if (event.target.closest("[data-open-file]")) dom.fileInput.click();
 });
+dom.demoBtn.addEventListener("click", openDemoVideo);
 dom.openBtn.addEventListener("click", () => dom.fileInput.click());
 dom.fileInput.addEventListener("change", () => { if (dom.fileInput.files[0]) openFile(dom.fileInput.files[0]); });
 dom.infoBtn.addEventListener("click", () => setInfoOpen(dom.infoPanel.hidden));
